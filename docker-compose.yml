@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  web:
+    build: .
+    command: sh start.sh
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+
+  worker:
+    build: .
+    command: celery -A api worker -l info
+    volumes:
+      - .:/app
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: stories
+      POSTGRES_USER: stories
+      POSTGRES_PASSWORD: stories
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+
+volumes:
+  postgres_data:
