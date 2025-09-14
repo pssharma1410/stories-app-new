@@ -13,7 +13,8 @@ from .models import Story, StoryAudience, StoryView, Reaction
 from .serializers import StorySerializer, ReactionSerializer
 from .permissions import CanViewStory
 from apps.users.models import Follow
-
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 
 class LocalUploadView(viewsets.ViewSet):
     """
@@ -48,6 +49,7 @@ class StoryViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         ttl = int(os.getenv("STORY_TTL_SECONDS", "86400"))
         expires_at = timezone.now() + timedelta(seconds=ttl)
+
         with transaction.atomic():
             story = serializer.save(author=self.request.user, expires_at=expires_at)
             audience_ids = self.request.data.get("audience_user_ids") or []
@@ -55,22 +57,53 @@ class StoryViewSet(viewsets.ModelViewSet):
                 StoryAudience.objects.bulk_create(
                     [StoryAudience(story=story, user_id=uid) for uid in audience_ids]
                 )
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"user_{story.author.id}",
+                {
+                    "type": "story_event",
+                    "payload": {
+                        "event": "story_created",
+                        "story_id": str(story.id),
+                        "author_id": str(story.author.id),
+                        "author_username": story.author.username,
+                        "visibility": story.visibility,
+                    },
+                },
+         )
+
             return story
 
     @action(detail=True, methods=["post"])
     def view(self, request, pk=None):
         story = self.get_object()
-        story_view, created = StoryView.objects.get_or_create(story=story, viewer=request.user)
-    
+        story_view, created = StoryView.objects.get_or_create(
+            story=story, viewer=request.user
+        )
+
+        if created:
+            channel_layer = get_channel_layer()
+            async_to_sync(channel_layer.group_send)(
+                f"user_{story.author.id}",
+                {
+                    "type": "story_event",
+                    "payload": {
+                        "event": "story_view",
+                        "story_id": str(story.id),          # ✅ cast to str
+                        "viewer_id": str(request.user.id),  # ✅ cast to str
+                        "viewer_username": request.user.username,
+                    },
+                },
+            )
+
         return Response(
             {
                 "message": "Story marked as viewed",
-                "story_id": story.id,
-                "viewer_id": request.user.id,
-                "already_viewed": not created,
+                "story_id": str(story.id),        # ✅ cast to str
+                "viewer_id": str(request.user.id) # ✅ cast to str
             },
-            status=200
-    )
+            status=200,
+        )
 
     @action(detail=True, methods=["post"])
     def reactions(self, request, pk=None):
@@ -83,15 +116,31 @@ class StoryViewSet(viewsets.ModelViewSet):
 
         reaction = Reaction.objects.create(story=story, user=request.user, emoji=emoji)
 
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f"user_{story.author.id}",
+            {
+                "type": "story_event",
+                "payload": {
+                    "event": "story_reaction",
+                    "story_id": str(story.id),          # ✅ cast to str
+                    "user_id": str(request.user.id),    # ✅ cast to str
+                    "username": request.user.username,
+                    "emoji": reaction.emoji,
+                    "reaction_id": str(reaction.id),    # ✅ cast to str
+                },
+            },
+        )
+
         return Response(
             {
                 "message": "Reaction added",
-                "story_id": story.id,
-                "user_id": request.user.id,
+                "story_id": str(story.id),
+                "user_id": str(request.user.id),
                 "emoji": reaction.emoji,
-                "reaction_id": reaction.id,
+                "reaction_id": str(reaction.id),
             },
-            status=201
+            status=201,
         )
 
 

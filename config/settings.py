@@ -11,6 +11,7 @@ DEBUG = os.getenv("DEBUG", "True") == "True"
 # It's recommended to add 'corsheaders' for handling cross-origin requests in APIs.
 # You would need to `pip install django-cors-headers`
 INSTALLED_APPS = [
+    'daphne',
     "django.contrib.admin", 
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -90,9 +91,20 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [os.getenv("REDIS_URL", "redis://localhost:6379/0")],
+        },
+    },
+}
+
+# Your other settings like these remain the same
 # Redis + Celery
-CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0") # Changed redis hostname to localhost
+CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = CELERY_BROKER_URL
+
 
 # Django REST Framework
 REST_FRAMEWORK = {
@@ -102,6 +114,14 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.UserRateThrottle",
+        "rest_framework.throttling.AnonRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "user": "20/min",   # adjust per need
+        "anon": "20/min",
+    },
 }
 
 # JWT Config
