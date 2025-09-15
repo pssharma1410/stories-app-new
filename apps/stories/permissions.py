@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 from django.utils import timezone
 from apps.users.models import Follow
+from apps.stories.models import StoryAudience
 
 
 class CanViewStory(BasePermission):
@@ -12,7 +13,13 @@ class CanViewStory(BasePermission):
         if obj.visibility == "private":
             return obj.author_id == request.user.id
         if obj.visibility == "friends":
-            return Follow.objects.filter(
+            is_follower = Follow.objects.filter(
                 follower=request.user, followee=obj.author
-            ).exists()
-        return False
+                ).exists()
+
+            in_audience = StoryAudience.objects.filter(
+                story=obj, user=request.user
+                ).exists()
+
+            return is_follower or in_audience
+        # return False

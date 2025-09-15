@@ -143,7 +143,6 @@ class StoryViewSet(viewsets.ModelViewSet):
             status=201,
         )
 
-
     @action(detail=False, methods=["get"], permission_classes=[IsAuthenticated])
     def feed(self, request):
         now = timezone.now()
